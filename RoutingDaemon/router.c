@@ -5,12 +5,46 @@
 #define BUF_SIZE 1450
 #define DST_MAC_ADDR {0x00, 0x00, 0x00, 0x00, 0x00, 0x02}
 
+/**** ROUTING ****/
+
+int compare_mac_addresses( uint8_t *mac_addr1, uint8_t *mac_addr2 ) {
+	return memcmp(mac_addr1, mac_addr2, 6);
+}
+
 struct host {
 	uint8_t address[6];
 };
 
 struct host routing_table[255];
 
+int table_iterator = 0;
+
+int inTable(uint8_t mac_addr[6]) {
+	int found = 0;
+	for ( int i = 0; i < 5; i++ ) {
+		if ( compare_mac_addresses( routing_table[i].address, mac_addr ) == 0 ) {
+			found = 1;
+			break;
+		}
+	}
+	return found;
+}
+
+void addToTable( uint8_t mac_addr[6] ) {
+    memcpy(routing_table[table_iterator].address, mac_addr, 6);
+	table_iterator++;
+}
+
+void printRoutingTable() {
+	printf("*** Routing Table ***\n");
+	for ( int i = 0; i < table_iterator; i++ ) {
+		for (int j = 0; j < 6; j++) {
+			printf("%02X ", routing_table[i].address[j]);
+		}
+		printf("\n");
+	}
+	printf("\n\n");
+}
 
 struct sockaddr_ll MAC_ADDRESS;
 uint8_t MAC_BROADCAST_ADDR[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
@@ -88,10 +122,6 @@ void get_mac_from_interface(struct sockaddr_ll *so_name) {
 	return;
 }
 
-int compare_mac_addresses( uint8_t *mac_addr1, uint8_t *mac_addr2 ) {
-	return memcmp(mac_addr1, mac_addr2, 6);
-}
-
 int is_broadcast( struct ether_frame incoming_frame ) {
 	/* 	If ethernet dst mac address is broadcast
 		If MIP dst is broadcast 0xFF
@@ -103,18 +133,6 @@ int is_broadcast( struct ether_frame incoming_frame ) {
 	}
 	return 0;
 }
-
-/*
-int request_is_for_curr_host( struct ether_frame incoming_frame ) {
-	
-	if ( 	incoming_frame.pdu.sdu.type == 0x00 
-			&& incoming_frame.pdu.sdu.addr == MIP_ADDRESS ) 
-	{
-		return 1;
-	}
-	return 0;
-}
-*/
 
 int router_request_is_for_host( struct ether_frame incoming_frame ) {
 	if ( 	compare_mac_addresses( incoming_frame.dst_addr, MAC_ADDRESS.sll_addr ) == 0 	// mac addr match
@@ -145,7 +163,7 @@ int response_is_for_curr_host( struct ether_frame incoming_frame ) {
 	return 0;
 }
 
-struct ether_frame* create_router_request(struct sockaddr_ll *so_name, uint8_t mac_dst_addr[6]) {
+struct ether_frame* create_hello_message(struct sockaddr_ll *so_name, uint8_t mac_dst_addr[6]) {
     struct ether_frame* ethernet_frame = malloc(sizeof(*ethernet_frame));
     struct MIP_ARP arp;
     struct MIP_PDU pdu;
@@ -217,7 +235,6 @@ struct ether_frame recv_raw_packet(int sd)
 	return ethernet_frame;
 }
 
-
 void server(int *identifier)
 {
 	
@@ -285,7 +302,7 @@ void server(int *identifier)
 	/**************************************************************************/
 	
 	// Start router by sending broadcast request for filling routing table
-	struct ether_frame* router_req_packet = create_router_request( &so_name, MAC_BROADCAST_ADDR );
+	struct ether_frame* router_req_packet = create_hello_message( &so_name, MAC_BROADCAST_ADDR );
 	send_raw_packet(raw_sock, &so_name, router_req_packet);
 	free(router_req_packet);
 	
@@ -305,133 +322,39 @@ void server(int *identifier)
 			// INCOMING RAW PACKET
 			if (events->data.fd == raw_sock) {
 				
-				// DEBUG
-				printf("epoll event\n\n");
-				
 				// Recieved a broadcast from another router
 				struct ether_frame incoming_frame = recv_raw_packet(raw_sock);
 				if ( is_broadcast(incoming_frame) ) {
 					
-					// DEBUG
-					printf("broadcast recv\n\n");
-				
-					// Check if the host is in the routing table
-					
-					// If not, add to routing table
-				
-				}
+					printf("Recieved broadcast from: "); //DEBUG
 
-				/*
-
-				struct ether_frame incoming_frame = recv_raw_packet(raw_sock);
-				
-				// RECIEVED MIP-ARP broadcast && requesting for current host's address
-				if( is_broadcast(incoming_frame) && request_is_for_curr_host(incoming_frame) ) {
-					
-					if ( DEBUG_MODE ) {
-						printf("recieved arp request message for mip addr. %u \n", incoming_frame.pdu.sdu.addr );
-						printf("match!\n");
+					for (int j = 0; j < 6; j++) {
+						printf("%02X ", incoming_frame.src_addr[j] );
 					}
+					printf("\n");
 					
-					// Get mapping values
-					struct mip_mac_mapping mapping;
-					mapping.mip_addr = incoming_frame.pdu.src_addr;
-					memcpy(mapping.mac_addr, incoming_frame.src_addr, 6);
-					
-					// Add to mapping table
-					add_to_table(mapping);
-					
-					if ( DEBUG_MODE ) {
-						printf("added mapping to arp table.\n");
-						print_arp_table();
-					}	
-					
-					// Send MIP-ARP response out
-					struct ether_frame* response = create_arp_response( &so_name, mapping.mac_addr, mapping.mip_addr );
-					send_raw_packet(raw_sock, &so_name, response);
-					free(response);
-					
-					if ( DEBUG_MODE ) {
-						printf("sending arp response back.\n" );
-					}	
-					
-					//print_ethernet_frame( incoming_frame );
-					
-				}
-				
-				// RECIEVED MIP ARP RESPONSE TO THIS CLIENT
-				if ( response_is_for_curr_host(incoming_frame) ) {
-
-					if ( DEBUG_MODE ) {
-						printf("recieved an arp response back. \n");
-						printf("match!\n");					
-					}	
-					
-					// Get mapping values
-					struct mip_mac_mapping mapping;
-					mapping.mip_addr = incoming_frame.pdu.src_addr;
-					memcpy(mapping.mac_addr, incoming_frame.src_addr, 6);
-					
-					if ( add_to_table(mapping) ) {
-						if ( DEBUG_MODE ) {
-							printf("Mapping added to table. \n");
-							print_arp_table();
-						}
-					}
-					else {
-						if ( DEBUG_MODE ) {
-							printf("Mapping already exists \n");
-						}
-					}
-					
-					// PING
-					struct ether_frame* ping_packet = create_ping_packet( &so_name, mapping.mac_addr, mapping.mip_addr );
-					send_raw_packet(raw_sock, &so_name, ping_packet);
-					free(ping_packet);
-					expecting_pongs++;
-					
-					if ( DEBUG_MODE ) {
-						printf("sending ping to mip daemon #%u \n", mapping.mip_addr);
-					}
-					
-				}
-				
-				// RECIEVED PING // PONG
-				else if ( ping_is_for_host(incoming_frame) ) {
-					
-					// The ping is a pong
-					if ( expecting_pongs > 0 ) {
-					
-						// send ping struct trough the domain socket to server
-
-						if ( DEBUG_MODE ) {
-							printf( "recieved pong from mip daemon #%u \n", incoming_frame.pdu.src_addr );						
-						}
-
-						expecting_pongs--;
-					}
-					// recieved a ping, need to send a pong
-					else {
-					
-						if ( DEBUG_MODE ) {
-							printf("recieved ping from mip daemon #%u \n", incoming_frame.pdu.src_addr );
-						}
-						// send pong struct trough the domain socket to server
-						// send_to_client(domain_socket_descriptor);
+					// If the host is not in routing table
+					if ( inTable( incoming_frame.src_addr ) == 0 ) {
 						
-						// send pong back to src daemon
-						struct ether_frame* pong_packet = create_ping_packet( &so_name, incoming_frame.src_addr, incoming_frame.pdu.src_addr );
-						send_raw_packet(raw_sock, &so_name, pong_packet);
-						free(pong_packet);
+						printf("Adding unknown host to routing table.\n"); //DEBUG
+						//printf("sending own broadcast back\n\n"); //DEBUG
 						
-						if ( DEBUG_MODE ) {
-							printf("sending pong back to mip daemon #%u \n", incoming_frame.pdu.src_addr);
-						}
+						addToTable( incoming_frame.src_addr );
+						printRoutingTable();
 						
+						// Send broadcast
+						struct ether_frame* router_req_packet = create_hello_message( &so_name, MAC_BROADCAST_ADDR );
+						send_raw_packet(raw_sock, &so_name, router_req_packet);
+						free(router_req_packet);
+
+					} else {
+					
+						printf("Host is already in table.\n");
 					}
+					
+				
 				}
-				*/
-			}					
+			}
 			
 			// ping client sent buffer trough domain socket
 			else {
