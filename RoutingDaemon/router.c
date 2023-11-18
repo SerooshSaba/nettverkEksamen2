@@ -102,7 +102,6 @@ void print_ethernet_frame( struct ether_frame frame ) {
 	printf("        addr: %u \n", 	frame.pdu.sdu.addr );
 }
 
-
 void get_mac_from_interface(struct sockaddr_ll *so_name) {
 	struct ifaddrs *ifaces, *ifp;
 	if (getifaddrs(&ifaces)) {
@@ -123,10 +122,7 @@ void get_mac_from_interface(struct sockaddr_ll *so_name) {
 }
 
 int is_broadcast( struct ether_frame incoming_frame ) {
-	/* 	If ethernet dst mac address is broadcast
-		If MIP dst is broadcast 0xFF
-		If MIP payload is ARP message aka 0x01
-	*/ 
+	/* 	If ethernet dst mac address is broadcast */ 
 	if ( compare_mac_addresses( incoming_frame.dst_addr, MAC_BROADCAST_ADDR ) == 0 )
 	{	
 		return 1;
@@ -134,7 +130,7 @@ int is_broadcast( struct ether_frame incoming_frame ) {
 	return 0;
 }
 
-int router_request_is_for_host( struct ether_frame incoming_frame ) {
+int request_is_for_host( struct ether_frame incoming_frame ) {
 	if ( 	compare_mac_addresses( incoming_frame.dst_addr, MAC_ADDRESS.sll_addr ) == 0 	// mac addr match
 			&& incoming_frame.pdu.sdu_type == 0x04						// Router
 	) {
@@ -178,10 +174,17 @@ struct ether_frame* create_hello_message(struct sockaddr_ll *so_name, uint8_t ma
     pdu.ttl = 1;					// TTL of 1 because this will be broadcast to reachable hosts
     pdu.sdu_len = sizeof(arp);
     pdu.sdu_type = 0x04; 			// Routing protocol
-    
     ethernet_frame->pdu = pdu;
     
     return ethernet_frame;
+}
+
+struct ether_frame* create_request_message(struct sockaddr_ll *so_name, uint8_t mac_dst_addr[6]) {
+	
+}
+
+struct ether_frame* create_response_message(struct sockaddr_ll *so_name, uint8_t mac_dst_addr[6]) {
+	
 }
 
 int send_raw_packet(int raw_socket_descriptor, struct sockaddr_ll *so_name, struct ether_frame* ethernet_frame) {
@@ -212,7 +215,7 @@ struct ether_frame recv_raw_packet(int sd)
 {
         struct sockaddr_ll so_name;
         int                return_code;
-        
+
         struct ether_frame ethernet_frame;
         struct msghdr      msg;
         struct iovec       msgvec[1];
@@ -220,7 +223,7 @@ struct ether_frame recv_raw_packet(int sd)
         /* Point to frame header */
         msgvec[0].iov_base = &ethernet_frame;
         msgvec[0].iov_len  = sizeof(struct ether_frame);
-        
+
         /* Fill out message metadata struct */
         msg.msg_name    = &so_name;
         msg.msg_namelen = sizeof(struct sockaddr_ll);
@@ -231,7 +234,7 @@ struct ether_frame recv_raw_packet(int sd)
         if (return_code == -1) {
         	perror("sendmsg");
         }
-	
+
 	return ethernet_frame;
 }
 
@@ -326,18 +329,12 @@ void server(int *identifier)
 				struct ether_frame incoming_frame = recv_raw_packet(raw_sock);
 				if ( is_broadcast(incoming_frame) ) {
 					
-					printf("Recieved broadcast from: "); //DEBUG
-
-					for (int j = 0; j < 6; j++) {
-						printf("%02X ", incoming_frame.src_addr[j] );
-					}
-					printf("\n");
+					printf("Recieved hello message from unknown host."); //DEBUG
 					
 					// If the host is not in routing table
 					if ( inTable( incoming_frame.src_addr ) == 0 ) {
 						
-						printf("Adding unknown host to routing table.\n"); //DEBUG
-						//printf("sending own broadcast back\n\n"); //DEBUG
+						printf("Adding to routing table...\n"); //DEBUG
 						
 						addToTable( incoming_frame.src_addr );
 						printRoutingTable();
@@ -347,9 +344,6 @@ void server(int *identifier)
 						send_raw_packet(raw_sock, &so_name, router_req_packet);
 						free(router_req_packet);
 
-					} else {
-					
-						printf("Host is already in table.\n");
 					}
 					
 				
