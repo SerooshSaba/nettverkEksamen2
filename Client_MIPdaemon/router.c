@@ -186,7 +186,7 @@ struct hello_message createHelloMessage(uint8_t host_addr[6]) {
 struct request_message createRequestMessage(uint8_t host_addr[6], uint8_t lookup_addr) {
 	struct request_message instance;
 	memcpy(instance.hostaddr, host_addr, 6);
-	instance.ttl = 0;
+	instance.ttl = 1;
 	instance.r = 0x52;
 	instance.e = 0x45;
 	instance.q = 0x51;
@@ -204,7 +204,7 @@ struct request_message createRequestMessage(uint8_t host_addr[6], uint8_t lookup
 struct response_message createResponseMessage(uint8_t host_addr[6], uint8_t next_hop_addr) {
 	struct response_message instance;
 	memcpy(instance.hostaddr, host_addr, 6);
-	instance.ttl = 0;
+	instance.ttl = 1;
 	instance.r = 0x52;
 	instance.s = 0x53;
 	instance.p = 0x50;
@@ -212,10 +212,40 @@ struct response_message createResponseMessage(uint8_t host_addr[6], uint8_t next
 	return instance;
 }
 
-/************************************************************************************************************************************
-* 																				SLUTT Å BRUKE DENNE STRUCTEN!!!!!!!
+/**
+* Creates an empty response_message structure
+*
+* Returns an empty response_massage structure
 */
+struct hello_message createEmptyHelloMessage() {
+    struct hello_message msg;
+    memset(&msg, 0, sizeof(struct hello_message));
+    return msg;
+}
 
+/**
+* Creates an empty request_message structure
+*
+* Returns an empty request_massage structure
+*/
+struct request_message createEmptyRequestMessage() {
+    struct request_message msg;
+    memset(&msg, 0, sizeof(struct request_message));
+    return msg;
+}
+
+/**
+* Creates an empty response_message structure
+*
+* Returns an empty response_message structure
+*/
+struct response_message createEmptyResponseMessage() {
+    struct response_message msg;
+    memset(&msg, 0, sizeof(struct response_message));
+    return msg;
+}
+
+// This structure is the pdu that is stored in the ethernet frame
 struct routerpdu {
 	struct hello_message hello;
 	struct request_message request;
@@ -239,17 +269,12 @@ struct ether_frame {
 * Returns a boolean value representing if it is set or not
 */
 bool helloIsSet(const struct hello_message hello) {
-    for (int i = 0; i < 6; i++) {
-        if (hello.macaddr[i] != 0)
-            return true;
-    }
     if (hello.ttl != 0) {
         return true;
     }
     if (hello.mipaddr != 0) {
     	return true;
     }
-    // Return false if all fields are zero
     return false;
 }
 
@@ -260,19 +285,11 @@ bool helloIsSet(const struct hello_message hello) {
 * Returns a boolean value representing if it is set or not
 */
 bool requestIsSet(const struct request_message request) {
-    // Check if any of the fields in the struct are not zero
-    for (int i = 0; i < 6; i++) {
-        if (request.hostaddr[i] != 0)
-            return true;
-    }
     if (request.ttl != 0 || request.r != 0 || request.e != 0 || request.q != 0) {
         return true;
     }
-    for (int i = 0; i < 6; i++) {
-        if (request.lookupaddr != 0)
-            return true;
-    }
-    // Return false if all fields are zero
+    if (request.lookupaddr != 0)
+        return true;
     return false;
 }
 
@@ -283,11 +300,6 @@ bool requestIsSet(const struct request_message request) {
 * Returns a boolean value representing if response is set or not
 */
 bool responseIsSet(const struct response_message response) {
-    // Check if any of the fields in the struct are not zero
-    for (int i = 0; i < 6; i++) {
-        if (response.hostaddr[i] != 0)
-            return true;
-    }
     if (response.ttl != 0 || response.r != 0 || response.s != 0 || response.p != 0) {
         return true;
     }
@@ -295,7 +307,7 @@ bool responseIsSet(const struct response_message response) {
         if (response.nexthopaddr != 0)
             return true;
     }
-    // Return false if all fields are zero
+
     return false;
 }
 
@@ -353,8 +365,13 @@ struct ether_frame* create_hello_message(struct sockaddr_ll *so_name, uint8_t ma
     struct ether_frame* ethernet_frame = malloc(sizeof(*ethernet_frame));
     
 	struct hello_message hello = createHelloMessage(mac_dst_addr);
+	struct request_message request = createEmptyRequestMessage();
+	struct response_message response = createEmptyResponseMessage();
+	
 	struct routerpdu pdu;
 	pdu.hello = hello;
+	pdu.request = request;
+	pdu.response = response;
     
     // FRAME
     memcpy(ethernet_frame->dst_addr, mac_dst_addr, 6);
@@ -377,9 +394,15 @@ struct ether_frame* create_request_message(struct sockaddr_ll *so_name, uint8_t 
 	
 	struct ether_frame* ethernet_frame = malloc(sizeof(*ethernet_frame));
 	
+	struct hello_message hello = createEmptyHelloMessage();
 	struct request_message request = createRequestMessage(mac_dst_addr, mipaddr);
+	struct response_message response = createEmptyResponseMessage();
+	
 	struct routerpdu pdu;
+	
+	pdu.hello = hello;
 	pdu.request = request;
+	pdu.response = response;
     
     // FRAME
     memcpy(ethernet_frame->dst_addr, mac_dst_addr, 6);
@@ -402,8 +425,13 @@ struct ether_frame* create_response_message(struct sockaddr_ll *so_name, uint8_t
 	
 	struct ether_frame* ethernet_frame = malloc(sizeof(*ethernet_frame));
 	
+	struct hello_message hello = createEmptyHelloMessage();
+	struct request_message request = createEmptyRequestMessage();
 	struct response_message response = createResponseMessage( mac_dst_addr, mipaddr );
+	
 	struct routerpdu pdu;
+	pdu.hello = hello;
+	pdu.request = request;
 	pdu.response = response;
     
     // FRAME
@@ -413,16 +441,6 @@ struct ether_frame* create_response_message(struct sockaddr_ll *so_name, uint8_t
     
     ethernet_frame->pdu = pdu;
     return ethernet_frame;
-}
-
-void handleRequest() {
-	
-	
-}
-
-void handleResponse() {
-	
-	
 }
 
 /********************* Sending & recieving packets *********************/
@@ -533,14 +551,6 @@ void server(int *identifier)
 	// Create the main epoll file descriptor for RAW and DOMAIN SOCKET
 	epollfd = epoll_create1(0);
 	
-	/*
-	if (epollfd == -1) {
-		perror("epoll_create1");
-		close(domain_socket_descriptor);
-		exit(EXIT_FAILURE);
-	}
-	*/
-	
 	/* RAW */
 	
 	// Add epoll file descriptor
@@ -553,18 +563,7 @@ void server(int *identifier)
 
 	printf("*** Router #%d is running ***\n\n", MIP_ADDRESS);
 
-	/* DOMAIN */
-	
-	/*
-	domain_socket_descriptor = prepare_server_sock(identifier);
-	rc = add_to_epoll_table(epollfd, &ev, domain_socket_descriptor);
-	if (rc == -1) {
-		close(domain_socket_descriptor);
-		exit(EXIT_FAILURE);
-	}
-	*/
-
-    /* STDIN */
+    // Add stdin to epoll
     struct epoll_event stdin_event;
     stdin_event.events = EPOLLIN;
     stdin_event.data.fd = STDIN_FD;
@@ -577,6 +576,7 @@ void server(int *identifier)
 	send_raw_packet(raw_sock, &so_name, router_req_packet);
 	free(router_req_packet);
 	
+	// Program loop
 	while (1) {
 	
 		memset(buf, 0, BUF_SIZE);
@@ -591,19 +591,19 @@ void server(int *identifier)
 			// RAW SOCKET EVENT
 			if (events->data.fd == raw_sock) {
 				
+				// Return the raw packet
 				struct ether_frame incoming_frame = recv_raw_packet(raw_sock);
 				
-				// Recieved a hello message
+				// If recieved a hello message
 				if ( helloIsSet(incoming_frame.pdu.hello) && is_broadcast(incoming_frame) ) {
-					
+				
 					// If the host is not in routing table
 					if ( macInTable( incoming_frame.src_addr ) == 0 ) {
-				
+					
 						printf("Recieved hello message from unknown host.\n");
 						printf("Adding to routing table...\n");
-						addToTable( incoming_frame.pdu.hello.mipaddr, incoming_frame.src_addr );
+						addToTable( incoming_frame.pdu.hello.mipaddr, incoming_frame.src_addr ); // Add to routing table
 						printRoutingTable();
-						
 						// Broadcast a hello message back
 						struct ether_frame* router_req_packet = create_hello_message( &so_name, MAC_BROADCAST_ADDR );
 						send_raw_packet(raw_sock, &so_name, router_req_packet);
@@ -612,10 +612,10 @@ void server(int *identifier)
 				}
 				
 				
-				// Recieved a packet for this spesific host 
+				// If recieved a packet for this spesific host
 				else if (request_is_for_host(incoming_frame)) {
 					
-					// Packet is a request
+					// If packet is a request
 					if ( requestIsSet(incoming_frame.pdu.request) ) {
 						printf("Recieved a request.\n");
 						
@@ -624,47 +624,19 @@ void server(int *identifier)
 							
 							printf("Route %d is not in table.\n", incoming_frame.pdu.request.lookupaddr);
 							
-							RESPONSES = 0;
-							WAITING_FOR_ROUTE_RESPONSE_MESSAGE = 1;
+							// Send a no route response
+							struct ether_frame* router_response_packet = create_response_message( &so_name, incoming_frame.src_addr, 255 );
+							send_raw_packet(raw_sock, &so_name, router_response_packet);
+							free(router_req_packet);
 							
-							// If node has neightbours outside of the requestor, ask them for a route
-							if ( table_iterator -1 >= 1 ) {
-							
-								printf("Asking other neightbours for a route.\n");
-								
-								for ( int i = 0; i < table_iterator; i++ ) {
-								
-									// Make sure not to send request to sender of the request
-									if ( compare_mac_addresses( incoming_frame.src_addr, routing_table[i].mac) == 1 ) {
-										struct ether_frame* router_req_packet 
-										= create_request_message( &so_name, routing_table[i].mac, incoming_frame.pdu.request.lookupaddr );
-										
-										send_raw_packet(raw_sock, &so_name, router_req_packet);
-										free(router_req_packet);
-									}
-								}
-							}
-							
-							
-							// Respond with a no route
-							else {
-							
-								struct ether_frame* router_req_packet = create_response_message( &so_name, incoming_frame.src_addr, 255 );
-								send_raw_packet(raw_sock, &so_name, router_req_packet);
-								free(router_req_packet);
-								
-							}
-							
-							
-						}
 						
-						
-						// MIP Address is in routing table
-						else {
-						
+						// If the mip address is in table
+						} else {
+												
 							printf("Route is in table.\n");
 							printf("Sending back a response.\n");
 							
+							// Send a response
 							struct ether_frame* router_req_packet = create_response_message( &so_name, incoming_frame.src_addr, MIP_ADDRESS );
 							send_raw_packet(raw_sock, &so_name, router_req_packet);
 							free(router_req_packet);
@@ -672,17 +644,20 @@ void server(int *identifier)
 						
 						
 					}
-					
-					// Packet is a response
 				
+					// Packet is a response
 					else if ( responseIsSet(incoming_frame.pdu.response) ) {
 					
 						printf("Recieved a response.\n");
 						
 						if ( incoming_frame.pdu.response.nexthopaddr == 255 ) {
-							printf("No route.\n");
+							printf("No route\n");
+						} else {
+							printf("Recieved a route! \n");
 						}
 						
+						// Return message to MIP daemon
+						// Could not implement this ;(
 					}
 					
 					
@@ -695,12 +670,6 @@ void server(int *identifier)
 				char input[100];
 				fgets(input, sizeof(input), stdin);
 				int mip_address = atoi(input);
-				
-				/*
-					Når requests sendes for en route, så må hosten følge med på hvor mange som sendes. Hvis alle responsene sier de ikke har en route
-					så må den gi et final svar til MIP daemon.
-				*/
-				
 				
 				if ( mipInTable(mip_address) == 0 ) {
 					printf("MIP address %d is not in routing table, sending requests.\n", mip_address);
@@ -720,17 +689,8 @@ void server(int *identifier)
 				}
 				
             }
-            
-			
-			// ping client sent buffer trough domain socket
-			//else {
-				// handle_client_input(events->data.fd, raw_sock, &so_name);
-			//}
-		
-		
 		}
 	}
-	
 	
 	close(domain_socket_descriptor);
 	unlink(SOCKET_NAME);
