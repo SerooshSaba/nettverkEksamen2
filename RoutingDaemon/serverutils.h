@@ -26,6 +26,7 @@
 #include <net/ethernet.h>
 #include <arpa/inet.h>
 
+#include <stdbool.h>
 
 static int prepare_server_sock(int *identifier);
 static int add_to_epoll_table(int efd, struct epoll_event *ev, int fd);
