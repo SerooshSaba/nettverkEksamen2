@@ -190,12 +190,13 @@ struct response_message createResponseMessage(uint8_t host_addr[6], uint8_t next
 	return instance;
 }
 
-/**
+/************************************************************************************************************************************
 * 																				SLUTT Å BRUKE DENNE STRUCTEN!!!!!!!
 */
+
 // type 1 = request
 // type 2 = response
-struct rpdu {
+struct rpdu {																		// <!-------------- REFACTOR
 	uint8_t rsp_addr; // MIP address for response
 	uint8_t req_addr; // MIP address
 	uint8_t src_addr; // MIP address
@@ -203,12 +204,14 @@ struct rpdu {
 	uint8_t type;
 };
 
+//************************************************************************************************************************************
+
 // struct representing our ethernet frame
 struct ether_frame {
 	uint8_t dst_addr[6];
 	uint8_t src_addr[6];
 	uint16_t eth_proto;
-	struct rpdu pdu;
+	struct rpdu pdu;																// <!-------------- REFACTOR
 } __attribute__((packed));
 
 /**
@@ -336,7 +339,7 @@ struct ether_frame* create_request_message(struct sockaddr_ll *so_name, uint8_t 
 	
 	struct ether_frame* ethernet_frame = malloc(sizeof(*ethernet_frame));
 	
-    struct rpdu pdu;
+    struct rpdu pdu;																// <!-------------- REFACTOR
     pdu.req_addr = mipaddr;
     pdu.src_addr = MIP_ADDRESS;
     pdu.ttl = 0;
@@ -363,7 +366,7 @@ struct ether_frame* create_response_message(struct sockaddr_ll *so_name, uint8_t
 	
 	struct ether_frame* ethernet_frame = malloc(sizeof(*ethernet_frame));
 	
-    struct rpdu pdu;
+    struct rpdu pdu;																		// <!-------------- REFACTOR
     pdu.rsp_addr = mipaddr;
     pdu.src_addr = MIP_ADDRESS;
     pdu.ttl = 0;
