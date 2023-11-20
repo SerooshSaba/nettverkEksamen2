@@ -63,7 +63,7 @@ struct host {
 struct host routing_table[255];
 
 int table_iterator = 0;
-
+ 
 /**
 * Checks if a mac address exits in the routing table
 * mac_addr: The mac address that is checked for
@@ -129,6 +129,9 @@ void printRoutingTable() {
 	printf("\n\n");
 }
 
+/**
+* Structure to hold request messages
+*/
 struct request_message {
 	uint8_t hostaddr[6];
 	uint8_t ttl;
@@ -138,6 +141,9 @@ struct request_message {
 	uint8_t lookupaddr[6];
 };
 
+/**
+* Structure to hold response messages
+*/
 struct response_message {
 	uint8_t hostaddr[6];
 	uint8_t ttl;
@@ -147,6 +153,14 @@ struct response_message {
 	uint8_t nexthopaddr[6];
 };
 
+
+/**
+* Creates a fully populated request_message structure
+* host_addr: The mac address of the host that is sending the request message
+* lookup_addr: The mac address that is being searched for
+*
+* Returns a request message structure
+*/
 struct request_message createRequestMessage(uint8_t host_addr[6], uint8_t lookup_addr[6]) {
 	struct request_message instance;
 	memcpy(instance.hostaddr, host_addr, 6);
@@ -158,6 +172,13 @@ struct request_message createRequestMessage(uint8_t host_addr[6], uint8_t lookup
 	return instance;
 }
 
+/**
+* Creates a fully populated response_message structure
+* host_addr: The mac address of the host that is sending the response message
+* next_hop_addr: The mac address that is the answer to the request, aka the next hop address
+*
+* Returns a response message structure
+*/
 struct response_message createResponseMessage(uint8_t host_addr[6], uint8_t next_hop_addr[6]) {
 	struct response_message instance;
 	memcpy(instance.hostaddr, host_addr, 6);
@@ -169,6 +190,9 @@ struct response_message createResponseMessage(uint8_t host_addr[6], uint8_t next
 	return instance;
 }
 
+/**
+* 																				SLUTT Å BRUKE DENNE STRUCTEN!!!!!!!
+*/
 // type 1 = request
 // type 2 = response
 struct rpdu {
@@ -187,50 +211,58 @@ struct ether_frame {
 	struct rpdu pdu;
 } __attribute__((packed));
 
-void print_mac_addr(uint8_t *addr, size_t len, int dst ) {
-	if ( dst == 1 )
-		printf("dst: ");
-	else if ( dst == 2 )
-		printf("src: ");
-	for (int i = 0; i < len - 1; i++) {
-		printf("%02X ", addr[i]);
-	}
-}
-
-bool requestIsSet(const struct request_message myStruct) {
+/**
+* Checks if a request_message struct has fields that are set / populated
+* request: The request_message struct that is checked
+*
+* Returns a boolean value representing if it is set or not
+*/
+bool requestIsSet(const struct request_message request) {
     // Check if any of the fields in the struct are not zero
     for (int i = 0; i < 6; i++) {
-        if (myStruct.hostaddr[i] != 0)
+        if (request.hostaddr[i] != 0)
             return true;
     }
-    if (myStruct.ttl != 0 || myStruct.r != 0 || myStruct.e != 0 || myStruct.q != 0) {
+    if (request.ttl != 0 || request.r != 0 || request.e != 0 || request.q != 0) {
         return true;
     }
     for (int i = 0; i < 6; i++) {
-        if (myStruct.lookupaddr[i] != 0)
+        if (request.lookupaddr[i] != 0)
             return true;
     }
     // Return false if all fields are zero
     return false;
 }
 
-bool responseIsSet(const struct response_message myStruct) {
+/**
+* Checks if a response_message struct has fields that are set / populated
+* response: The response_message struct that is checked
+*
+* Returns a boolean value representing if response is set or not
+*/
+bool responseIsSet(const struct response_message response) {
     // Check if any of the fields in the struct are not zero
     for (int i = 0; i < 6; i++) {
-        if (myStruct.hostaddr[i] != 0)
+        if (response.hostaddr[i] != 0)
             return true;
     }
-    if (myStruct.ttl != 0 || myStruct.r != 0 || myStruct.s != 0 || myStruct.p != 0) {
+    if (response.ttl != 0 || response.r != 0 || response.s != 0 || response.p != 0) {
         return true;
     }
     for (int i = 0; i < 6; i++) {
-        if (myStruct.nexthopaddr[i] != 0)
+        if (response.nexthopaddr[i] != 0)
             return true;
     }
     // Return false if all fields are zero
     return false;
 }
 
+/**
+* Checks if an ethernet frame has a broadcast destination mac address
+* incoming_frame: The ethernet frame that is being checked
+*
+* Returns an integer that represents if the ethernet frame is a broadcast or not
+*/
 int is_broadcast( struct ether_frame incoming_frame ) {
 	/* 	If ethernet dst mac address is broadcast */ 
 	if ( compare_mac_addresses( incoming_frame.dst_addr, MAC_BROADCAST_ADDR ) == 0 ) {
@@ -239,6 +271,12 @@ int is_broadcast( struct ether_frame incoming_frame ) {
 	return 0;
 }
 
+/**
+* Checks if an ethernet frame is meant to be sendt to the current host
+* incoming_frame: The ethernet frame that is being checked
+*
+* Returns an integer that represents if the ethernet frame is destined for current host or not
+*/
 int request_is_for_host( struct ether_frame incoming_frame ) {
 	if ( compare_mac_addresses( incoming_frame.dst_addr, MAC_ADDRESS.sll_addr ) == 0) {
 		return 1; 
@@ -261,6 +299,13 @@ int response_is_for_curr_host( struct ether_frame incoming_frame ) {
 	return 0;
 }
 
+/**
+* Creates an ethernet frame that contains a hello message pdu
+* so_name: socket structure
+* mac_dst_addr: the mac destination address where the packet is being sent to
+*
+* Returns an ethernet frame
+*/
 struct ether_frame* create_hello_message(struct sockaddr_ll *so_name, uint8_t mac_dst_addr[6]) {
     struct ether_frame* ethernet_frame = malloc(sizeof(*ethernet_frame));
     
@@ -279,6 +324,14 @@ struct ether_frame* create_hello_message(struct sockaddr_ll *so_name, uint8_t ma
     return ethernet_frame;
 }
 
+/**
+* Creates an ethernet frame that contains a request message pdu
+* so_name: socket structure
+* mac_dst_addr: the mac destination address where the packet is being sent to
+* mipaddr: the mip address that is being requested
+*
+* Returns an ethernet frame
+*/
 struct ether_frame* create_request_message(struct sockaddr_ll *so_name, uint8_t mac_dst_addr[6], uint8_t mipaddr ) {
 	
 	struct ether_frame* ethernet_frame = malloc(sizeof(*ethernet_frame));
@@ -298,6 +351,14 @@ struct ether_frame* create_request_message(struct sockaddr_ll *so_name, uint8_t 
     return ethernet_frame;
 }
 
+/**
+* Creates an ethernet frame that contains a response message pdu
+* so_name: socket structure
+* mac_dst_addr: the mac destination address where the packet is being sent to
+* mipaddr: the mip address that is representing the answear to a request
+*
+* Returns an ethernet frame
+*/
 struct ether_frame* create_response_message(struct sockaddr_ll *so_name, uint8_t mac_dst_addr[6], uint8_t mipaddr ) {
 	
 	struct ether_frame* ethernet_frame = malloc(sizeof(*ethernet_frame));
@@ -329,6 +390,14 @@ void handleResponse() {
 
 /********************* Sending & recieving packets *********************/
 
+/**
+* Sends a ethernet to a predetermined destination
+* raw_socket_descriptor: integer representing the position of the raw socket in the file descriptor of program
+* so_name: socket structure for the program
+* ethernet_frame: the ethernet frame that is going to be sent
+*
+* Returns a code representing if the packet being sent was successful
+*/
 int send_raw_packet(int raw_socket_descriptor, struct sockaddr_ll *so_name, struct ether_frame* ethernet_frame) {
     struct msghdr *msg;
     struct iovec msgvec[1];
@@ -353,6 +422,12 @@ int send_raw_packet(int raw_socket_descriptor, struct sockaddr_ll *so_name, stru
     return return_code;
 }
 
+/**
+* Once the epoll register that a packet has been recieved, this function returns it
+* sd: the index of the socket in the socket descriptor
+*
+* Returns a code representing if the packet being sent was successful
+*/
 struct ether_frame recv_raw_packet(int sd)
 {
         struct sockaddr_ll so_name;
@@ -380,6 +455,12 @@ struct ether_frame recv_raw_packet(int sd)
 	return ethernet_frame;
 }
 
+/**
+* This is the function that runs the loop/epoll eventloop
+* identifier: a number representing the mip address of this host
+*
+* Returns void
+*/
 void server(int *identifier)
 {
 	
@@ -451,7 +532,6 @@ void server(int *identifier)
     stdin_event.events = EPOLLIN;
     stdin_event.data.fd = STDIN_FD;
     epoll_ctl(epollfd, EPOLL_CTL_ADD, STDIN_FD, &stdin_event);
-
 
 	/**************************************************************************/
 	
