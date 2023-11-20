@@ -447,7 +447,7 @@ int send_raw_packet(int raw_socket_descriptor, struct sockaddr_ll *so_name, stru
     msg->msg_namelen = sizeof(struct sockaddr_ll);
     msg->msg_iovlen  = 1;
     msg->msg_iov     = msgvec;
-    
+     
     int return_code = sendmsg(raw_socket_descriptor, msg, 0);
     if (return_code == -1) {
         perror("sendmsg");
